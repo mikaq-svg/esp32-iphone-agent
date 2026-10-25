@@ -55,6 +55,28 @@ jobs:
           echo "=== 错误摘要（如果有） ==="
           grep -iE "error:|failed|unable to|no such|not found" /tmp/build.log | head -30 || echo "没有匹配的错误关键词"
 
+      - name: 把错误写进运行摘要（页面直接可见）
+        if: failure()
+        run: |
+          echo "## ❌ 编译失败" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Xcode 版本" >> $GITHUB_STEP_SUMMARY
+          xcodebuild -version >> $GITHUB_STEP_SUMMARY 2>&1 || true
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 错误行" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          if [ -f /tmp/build.log ]; then
+            grep -iE "error:|fatal|failed to|unable to|no such module|cannot find" /tmp/build.log | head -40 >> $GITHUB_STEP_SUMMARY || echo "(没匹配到错误关键词)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "(build.log 不存在)" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 最后 60 行" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          tail -60 /tmp/build.log >> $GITHUB_STEP_SUMMARY 2>/dev/null || true
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
       - name: 打包成 .ipa
         if: success()
         working-directory: ios
