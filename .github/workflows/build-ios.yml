@@ -1,9 +1,8 @@
 name: Build unsigned IPA
 
 # 在 GitHub 的免费 macOS 机器上编译，产出未签名 .ipa
-# 不需要 Mac、不需要 Apple 开发者账号
 on:
-  workflow_dispatch:        # 手动触发
+  workflow_dispatch:
   push:
     branches: [main, master]
 
@@ -22,6 +21,20 @@ jobs:
           xcodebuild -version
           echo "---"
           sw_vers
+          echo "--- 可用的 Xcode ---"
+          ls /Applications | grep -i xcode || true
+
+      - name: 诊断工程（列出 scheme 和配置）
+        working-directory: ios
+        run: |
+          echo "=== 工程文件版本 ==="
+          grep -m1 "objectVersion" IPhoneAgent.xcodeproj/project.pbxproj || true
+          echo
+          echo "=== xcodebuild -list ==="
+          xcodebuild -list -project IPhoneAgent.xcodeproj 2>&1 || true
+          echo
+          echo "=== 共享 scheme ==="
+          ls -la IPhoneAgent.xcodeproj/xcshareddata/xcschemes/ 2>&1 || true
 
       - name: 编译（不签名）
         working-directory: ios
@@ -31,30 +44,31 @@ jobs:
             -project IPhoneAgent.xcodeproj \
             -scheme IPhoneAgent \
             -configuration Release \
-            -sdk iphoneos \
             -destination 'generic/platform=iOS' \
             -archivePath build/app.xcarchive \
             archive \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            CODE_SIGN_ENTITLEMENTS="" \
-            2>&1 | tail -120
+            2>&1 | tee /tmp/build.log | tail -200
+          echo
+          echo "=== 错误摘要（如果有） ==="
+          grep -iE "error:|failed|unable to|no such|not found" /tmp/build.log | head -30 || echo "没有匹配的错误关键词"
 
       - name: 打包成 .ipa
+        if: success()
         working-directory: ios
         run: |
           set -e
           APP="build/app.xcarchive/Products/Applications/IPhoneAgent.app"
           echo "=== 检查产物 ==="
           if [ ! -d "$APP" ]; then
-            echo "❌ 没找到 .app，列出 xcarchive 内容："
-            find build/app.xcarchive -maxdepth 4 -name "*.app" -o -maxdepth 4 -name "*.appex" | head
+            echo "❌ 没找到 .app"
+            find build -maxdepth 5 -name "*.app" -o -maxdepth 5 -name "*.appex" | head
             exit 1
           fi
           ls -la "$APP" | head -20
           echo
-          echo "=== 打包 ==="
           rm -rf build/Payload
           mkdir -p build/Payload
           cp -R "$APP" build/Payload/
@@ -64,8 +78,17 @@ jobs:
           ls -lh IPhoneAgent-unsigned.ipa
 
       - name: 上传产物
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: IPhoneAgent-unsigned-ipa
           path: ios/build/IPhoneAgent-unsigned.ipa
           retention-days: 7
+
+      - name: 失败时也上传日志
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: /tmp/build.log
+          retention-days: 3
