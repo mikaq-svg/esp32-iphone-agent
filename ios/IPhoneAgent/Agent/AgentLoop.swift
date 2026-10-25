@@ -45,7 +45,9 @@ extension Pointer: Gestures {}
     private(set) var lastActed = 0.0
     /// Awaited before every look and every gesture (the app holds the run while its own UI is in front).
     var gate: (() async throws -> Void)?
-    static let maxTokens = ["planner": 1500, "actor": 1000]
+    // Providers cap max_tokens differently: Zhipu GLM-4V caps at 1024, so stay under it.
+    // 1500 made every planner call fail with HTTP 400 "max_tokens 参数非法".
+    static let maxTokens = ["planner": 1000, "actor": 900]
     private var job: Task<Void, Never>?
     var onFinish: (() -> Void)?
     /// Paused for the board to come back (a line for the UI), or nil when going on.
