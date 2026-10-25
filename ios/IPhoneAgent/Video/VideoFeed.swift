@@ -82,7 +82,10 @@ extension ScreenSource {
         }
     }
 
-    var live: Bool { mirroring && frame != nil && (device?.connected ?? false) }
+    /// Live when the board reports streaming, OR when a decoded frame arrived within the last 30 s.
+    /// The old form trusted only the board's `ap == streaming` flag; a board that streams (snap works)
+    /// but reports a different status made the app refuse to start. A recent frame is the better proof.
+    var live: Bool { (mirroring || (frame != nil && now() - updated < 30)) && (device?.connected ?? false) }
 
     /// Frame width / height (portrait iPhone as a fallback).
     var aspect: Double { size.width > 0 && size.height > 0 ? size.width / size.height : 9 / 19.5 }
@@ -138,8 +141,12 @@ extension ScreenSource {
     /// A current frame for the model. While the board streams, the live stream has it (an IDR comes every
     /// ~2 s): use a frame younger than `maxAge`, or wait for the next one. Snap only as a fallback, retried
     /// once with a longer timeout. Returns where the frame came from, for the log.
+    ///
+    /// maxAge/wait were 1 s/3 s: a board whose mirror stream runs at a few frames per second (Wi-Fi + BLE
+    /// sharing one radio) never had a frame that fresh, so the start aborted with "no phone screen".
+    /// 10 s/8 s tolerates a slow stream while still refusing a frame from a previous run.
     @discardableResult
-    func currentFrame(maxAge: Double = 1, wait: Double = 3) async throws -> String {
+    func currentFrame(maxAge: Double = 10, wait: Double = 8) async throws -> String {
         if streamOn && mirroring {
             if frame != nil && now() - updated < maxAge { return "live" }
             if await fresh(since: now() - maxAge, timeout: wait) != nil { return "live (waited)" }
